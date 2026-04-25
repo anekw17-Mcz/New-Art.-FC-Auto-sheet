@@ -218,12 +218,41 @@
                 google.script.run.withSuccessHandler(function(res) {
                     if(res.success) {
                         alert(res.message);
-                        location.reload(); 
-                    } else { alert("เกิดข้อผิดพลาด: " + res.message); }
+                        
+                        // --- ส่วนที่เพิ่มใหม่: ล้างข้อมูลเพื่อเริ่มกรอกใหม่ ---
+                        document.getElementById('inspectionForm').reset(); // เคลียร์ช่อง input/ไฟล์
+                        
+                        // เคลียร์ Text ที่แสดงผล
+                        ['v_vendor','v_desc','v_po','v_qty','v_samp','v_date'].forEach(id => document.getElementById(id).innerText = "");
+                        
+                        // เคลียร์ค่า Hidden
+                        ['h_date','h_po','h_vendor','h_desc','h_qty','h_samp'].forEach(id => document.getElementById(id).value = "");
+                        
+                        // คืนค่าปุ่มกลับไปที่สถานะเริ่มต้น
+                        document.querySelectorAll('.option-btn').forEach(b => b.classList.remove('active'));
+                        document.querySelectorAll('.d-flex.gap-2 .option-btn:first-child').forEach(b => b.classList.add('active'));
+                        document.getElementById('sampleStatus').value = "มีตัวอย่าง";
+                        document.getElementById('inspectionResult').value = "ไม่พบปัญหา";
+                        
+                        // เด้งกลับไปด้านบนสุดของหน้าจอ
+                        window.scrollTo(0, 0);
+                        // ----------------------------------------------
+                        
+                    } else { 
+                        alert("เกิดข้อผิดพลาด: " + res.message); 
+                    }
+                    
                     document.getElementById('loadingOverlay').style.display = 'none';
                     btn.disabled = false;
                 }).processForm(payload);
-            } catch (e) { alert("Error: " + e); document.getElementById('loadingOverlay').style.display = 'none'; btn.disabled = false; }
+            
+            // ===== เพิ่ม catch block ที่ขาดหายไปตรงนี้ครับ =====
+            } catch (e) {
+                alert("Error: " + e);
+                document.getElementById('loadingOverlay').style.display = 'none';
+                btn.disabled = false;
+            }
+            // ===========================================
         }
 
         function startScan() {
