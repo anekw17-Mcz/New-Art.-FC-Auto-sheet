@@ -1,5 +1,6 @@
 function doGet() { 
-  return HtmlService.createTemplateFromFile('INDEX').evaluate()
+  // ต้องมีคำว่า return ตรงนี้นะครับ
+  return HtmlService.createTemplateFromFile('Index').evaluate()
          .setTitle('New Art. FC Report (Dark Mode)')
          .addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
@@ -20,7 +21,7 @@ function getProductData(scannedValue) {
       
       if (barcode === searchId || article === searchId) {
         var rawDate = new Date(data[i][0]);
-        var formattedDate = Utilities.formatDate(rawDate, "GMT+7", "dd-MM-yyyy"); // แก้เดือนเป็น MM แล้ว
+        var formattedDate = Utilities.formatDate(rawDate, "GMT+7", "dd-MM-yyyy"); 
         
         return {
           success: true,
@@ -40,44 +41,46 @@ function getProductData(scannedValue) {
 
 function processForm(formData) {
   try {
-    var templateSs = SpreadsheetApp.getActiveSpreadsheet(); // นี่คือไฟล์ Master
+    var templateSs = SpreadsheetApp.getActiveSpreadsheet(); 
     var mainFolder = DriveApp.getFolderById("1qNJtUa1y7pF0i7Mj-R4mwPyFJTlTvXs2");
     var folderName = formData.date + " - " + formData.poNumber;
     
-    // สร้างหรือค้นหา Folder
     var folders = mainFolder.getFoldersByName(folderName);
     var targetFolder = folders.hasNext() ? folders.next() : mainFolder.createFolder(folderName);
     
-    // สร้างหรือค้นหาไฟล์ Report สำหรับ PO นี้
     var fileName = "New Art. FC - PO_" + formData.poNumber;
     var files = targetFolder.getFilesByName(fileName);
     var reportSs;
     
     if (files.hasNext()) {
-      reportSs = SpreadsheetApp.open(files.next()); // ถ้ามีไฟล์ PO เดิม ให้เปิดขึ้นมา
+      reportSs = SpreadsheetApp.open(files.next()); 
     } else {
       var newFile = DriveApp.getFileById(templateSs.getId()).makeCopy(fileName, targetFolder);
-      reportSs = SpreadsheetApp.open(newFile); // ถ้ายังไม่มีไฟล์ PO นี้ ให้ Copy ใหม่
+      reportSs = SpreadsheetApp.open(newFile); 
     }
 
     var sheetName = formData.article.toString();
     
-    // ลบ Sheet ข้อมูล Article เก่าถ้ามี (กรณีสแกนแก้ข้อมูลเดิม)
-    if (reportSs.getSheetByName(sheetName)) {
-      reportSs.deleteSheet(reportSs.getSheetByName(sheetName));
-    }
-    
-    // 🔥 วิธีที่ 2: ดึง Template จากไฟล์ Master ต้นฉบับ (templateSs) เท่านั้น! 🔥
     var masterTemplateSheet = templateSs.getSheetByName("Template");
     if (!masterTemplateSheet) {
       return { success: false, message: 'ไม่พบ Template Sheet ในไฟล์ Master' };
     }
     
-    // คัดลอก Template จากไฟล์ Master ไปยังไฟล์ Report ปลายทาง
-    var targetSheet = masterTemplateSheet.copyTo(reportSs).setName(sheetName);
+    // 🛠️ จุดที่แก้ไข: สลับลำดับการวาง Sheet เพื่อป้องกัน Error ลบ Sheet จนหมด 🛠️
+    // 1. คัดลอก Template มาค้ำไว้ในไฟล์ปลายทางก่อน (ระบบจะตั้งชื่อชั่วคราวเช่น "Copy of Template")
+    var targetSheet = masterTemplateSheet.copyTo(reportSs);
+    
+    // 2. เช็คว่ามีข้อมูล Article เดิมอยู่ไหม ถ้ามีให้ลบทิ้ง (ตอนนี้ลบได้แล้วเพราะมี targetSheet หน้าใหม่ค้ำไว้)
+    var existingSheet = reportSs.getSheetByName(sheetName);
+    if (existingSheet) {
+      reportSs.deleteSheet(existingSheet);
+    }
+    
+    // 3. ค่อยเปลี่ยนชื่อ Sheet ใหม่ให้เป็นเลข Article
+    targetSheet.setName(sheetName);
     targetSheet.showSheet(); 
+    // -------------------------------------------------------------
 
-    // บันทึกข้อมูลข้อความ
     targetSheet.getRange('B2').setValue(formData.date);
     targetSheet.getRange('B3').setValue(formData.poNumber);
     targetSheet.getRange('B4').setValue(formData.vendor);
@@ -86,21 +89,18 @@ function processForm(formData) {
     targetSheet.getRange('B7').setValue(formData.poQty + " boxes");
     targetSheet.getRange('B8').setValue(formData.sampling + " boxes");
     
-    // จัดรูปแบบวันที่ MFD
     var mfdParts = formData.mfgDate.split('-');
     var formattedMFD = mfdParts[2] + "-" + mfdParts[1] + "-" + mfdParts[0];
     targetSheet.getRange('B9').setValue(formattedMFD);
     
-    // ลงผลตรวจและไฮไลท์
     targetSheet.getRange('B10').setValue(formData.inspectionResult).setBackground('#FFFF00');
     targetSheet.getRange('B11').setValue(formData.sampleStatus).setBackground('#FFFF00');
 
-    // แทรกรูปภาพให้อยู่กึ่งกลางเซลล์
     if (formData.group1) insertImagesCentered(formData.group1, targetSheet, 14);
     if (formData.group2) insertImagesCentered(formData.group2, targetSheet, 15);
     if (formData.group3) insertImagesCentered(formData.group3, targetSheet, 16);
 
-    // 🔥 ลบหน้า Template ขยะ ในไฟล์ Report ทิ้ง (เพื่อให้ไฟล์คลีนตลอดเวลา) 🔥
+    // ลบ Template หน้าเปล่าที่ติดมาตอนเริ่มสร้างไฟล์ (ถ้ามี)
     var localTemplate = reportSs.getSheetByName("Template");
     if (localTemplate) {
       reportSs.deleteSheet(localTemplate);
@@ -118,27 +118,38 @@ function processForm(formData) {
 }
 
 function insertImagesCentered(images, sheet, row) {
-  var colStart = 3; // Column C
-  var cellWidth = 201; // Width 28.00
-  var cellHeight = 192; // Height 144.0
-  var padding = 10;
-  var maxImages = Math.min(images.length, 4);
+  var colStart = 3; // เริ่มที่คอลัมน์ C
+  var cellWidth = 170; // ความกว้างช่อง (อ้างอิงจาก Template ของคุณ)
+  var cellHeight = 145; // ความสูงช่อง
+  var padding = 3; // 💡 เผื่อขอบไว้ 10px ป้องกัน Excel ดึงภาพเพี้ยน
+  
+  // จำนวนรูปรวมสูงสุดต่อแถว
+  var maxImages = Math.min(images.length, 10);
 
   for (var i = 0; i < maxImages; i++) {
     try {
       if (images[i] && images[i].data) {
-        var blob = Utilities.newBlob(Utilities.base64Decode(images[i].data), images[i].type, images[i].name);
+        var blob = Utilities.newBlob(
+          Utilities.base64Decode(images[i].data), 
+          images[i].type, 
+          images[i].name
+        );
         var image = sheet.insertImage(blob, colStart + i, row);
         
+        // 1. อ่านขนาดจริงของรูปต้นฉบับ
         var rawW = image.getWidth();
         var rawH = image.getHeight();
+        
+        // 2. คำนวณอัตราส่วนเพื่อย่อรูป (รูปจะไม่เบี้ยวหน้าอ้วน/หน้าตอบ)
         var ratio = Math.min((cellWidth - padding * 2) / rawW, (cellHeight - padding * 2) / rawH);
         
         var newW = rawW * ratio;
         var newH = rawH * ratio;
         
+        // 3. กำหนดขนาดใหม่ให้รูปภาพ
         image.setWidth(newW).setHeight(newH);
         
+        // 4. คำนวณเพื่อจัดกึ่งกลางเซลล์พอดีเป๊ะ
         var offsetX = (cellWidth - newW) / 2;
         var offsetY = (cellHeight - newH) / 2;
         image.setAnchorCellXOffset(offsetX).setAnchorCellYOffset(offsetY);
